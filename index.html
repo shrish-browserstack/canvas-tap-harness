@@ -1,0 +1,432 @@
+<title>Canvas Tap Harness</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f4f6f5; --panel:#ffffff; --panel-2:#eef1f0; --line:#d6dedd;
+    --ink:#14201f; --muted:#5c6b6a; --accent:#0e9aa0; --accent-ink:#053b3d;
+    --hit:#1f9d54; --miss:#d0473c; --warn:#b7791f;
+    --radius:10px; --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0d1417; --panel:#121b1f; --panel-2:#0f171b; --line:#22323a;
+      --ink:#dfe8ea; --muted:#83979c; --accent:#3ec6c9; --accent-ink:#0d1417;
+      --hit:#5fd07a; --miss:#f0685f; --warn:#f2b45c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0d1417; --panel:#121b1f; --panel-2:#0f171b; --line:#22323a;
+    --ink:#dfe8ea; --muted:#83979c; --accent:#3ec6c9; --accent-ink:#0d1417;
+    --hit:#5fd07a; --miss:#f0685f; --warn:#f2b45c;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 20px 48px}
+  header.app{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:20px}
+  header.app h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0}
+  header.app .tag{font-family:var(--mono);font-size:11px;color:var(--accent);border:1px solid var(--line);border-radius:100px;padding:2px 9px;letter-spacing:.02em}
+  header.app p{margin:0;color:var(--muted);font-size:13px;flex-basis:100%;max-width:74ch}
+  .grid{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:22px;align-items:start}
+  @media (max-width:820px){.grid{grid-template-columns:1fr}}
+
+  /* ---- device stage ---- */
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:sticky;top:14px}
+  @media (max-width:820px){.stage{position:static}}
+  .stage .frame{background:#05090b;border-radius:22px;padding:10px;box-shadow:inset 0 0 0 2px #1c2a30, 0 10px 30px rgba(0,0,0,.35)}
+  canvas#screen{display:block;width:100%;height:auto;border-radius:14px;cursor:crosshair;touch-action:none}
+  .readout{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px}
+  .readout b{color:var(--ink);font-weight:500}
+  .stage .ctl-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  button.op{font-family:var(--sans);font-size:12.5px;font-weight:500;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer}
+  button.op:hover{border-color:var(--accent)}
+  button.op[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  button.op.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  button.op:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---- console ---- */
+  .console{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .card > h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0;padding:12px 15px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .card .body{padding:13px 15px}
+  .stat-row{display:flex;gap:22px;font-family:var(--mono)}
+  .stat b{display:block;font-size:23px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+  .stat span{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .stat.hit b{color:var(--hit)} .stat.miss b{color:var(--miss)}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:6px 15px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-weight:500;color:var(--muted);font-size:10px;letter-spacing:.05em;text-transform:uppercase;position:sticky;top:0;background:var(--panel)}
+  tr:last-child td{border-bottom:0}
+  td.gt-id{color:var(--ink);font-weight:500}
+  td.note{white-space:normal;color:var(--muted);font-family:var(--sans);font-size:11.5px}
+  .scroll{max-height:280px;overflow:auto}
+  .log{max-height:300px;overflow:auto;font-family:var(--mono);font-size:12px;padding:0}
+  .log .line{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:6px 15px;border-bottom:1px solid var(--line)}
+  .log .line:last-child{border-bottom:0}
+  .chip{font-size:10px;font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:5px}
+  .chip.hit{background:color-mix(in srgb,var(--hit) 18%,transparent);color:var(--hit)}
+  .chip.miss{background:color-mix(in srgb,var(--miss) 18%,transparent);color:var(--miss)}
+  .log .coord{color:var(--muted)}
+  .log .tgt{text-align:right;color:var(--ink)}
+  .log .empty{padding:16px 15px;color:var(--muted);font-family:var(--sans);font-size:12.5px}
+  /* resolution view */
+  .resgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .resgrid figure{margin:0}
+  .resgrid canvas{width:100%;height:auto;background:#05090b;border-radius:6px;border:1px solid var(--line)}
+  .resgrid figcaption{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45}
+  .resgrid .glyphpx{color:var(--ink)}
+  .resgrid .bad .glyphpx{color:var(--miss)} .resgrid .good .glyphpx{color:var(--hit)}
+  .hint{font-size:12px;color:var(--muted);margin:2px 0 0;line-height:1.5}
+  code{font-family:var(--mono);font-size:.92em;background:var(--panel-2);padding:1px 5px;border-radius:4px;color:var(--ink)}
+  a{color:var(--accent)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="app">
+    <h1>Canvas Tap Harness</h1>
+    <span class="tag">canvas coordinate-click feasibility</span>
+    <p>A slot-style UI drawn entirely as <b>pixels on a <code>&lt;canvas&gt;</code></b> — no DOM, no accessibility tree, exactly what the App&nbsp;Automate planner perceives on a WebGL game. Tap a control; the console reads back <b>HIT/MISS against known geometry</b>. Drive it by hand, with browser automation (clicks log to console as <code>[canvas-poc]</code>), or via <code>window.canvasPoc</code>.</p>
+  </header>
+
+  <div class="grid">
+    <!-- SYSTEM UNDER TEST -->
+    <section class="stage" aria-label="Canvas under test">
+      <div class="frame"><canvas id="screen" width="360" height="720" aria-label="Slot game canvas — controls drawn as pixels"></canvas></div>
+      <div class="readout">
+        <span>pointer <b id="ptr">—</b></span>
+        <span>last tap <b id="lastTap">—</b></span>
+      </div>
+      <div class="ctl-row">
+        <button class="op" id="btnOverlay" aria-pressed="false">Ground-truth overlay</button>
+        <button class="op" id="btnFree">Trigger free games</button>
+        <button class="op" id="btnReset">Reset log</button>
+      </div>
+    </section>
+
+    <!-- OBSERVER / INSTRUMENT -->
+    <div class="console">
+      <div class="card">
+        <h2>Tap accuracy <span id="hrPct" style="font-family:var(--mono);color:var(--ink)">—</span></h2>
+        <div class="body">
+          <div class="stat-row">
+            <div class="stat"><b id="sTotal">0</b><span>Taps</span></div>
+            <div class="stat hit"><b id="sHit">0</b><span>Hits</span></div>
+            <div class="stat miss"><b id="sMiss">0</b><span>Misses</span></div>
+            <div class="stat"><b id="sSpins">0</b><span>Spins</span></div>
+          </div>
+          <p class="hint">A <b>hit</b> means the tap landed inside a control's known rect. Distance to the control centre (px, in the 360×720 canvas space) is logged so you can measure how far off a coordinate tap is.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Tap log</h2>
+        <div class="log" id="log"><div class="empty">No taps yet — click a control on the canvas, or call <code>canvasPoc.tapAt(190,646)</code>.</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Ground truth <span style="font-family:var(--mono);color:var(--muted);font-size:11px">360 × 720 canvas px</span></h2>
+        <div class="scroll">
+          <table id="gt"><thead><tr><th>id</th><th>rect x,y,w,h</th><th>centre</th><th class="note">feasibility case</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Model-view resolution (D3)</h2>
+        <div class="body">
+          <p class="hint" style="margin-top:0">How the same frame reaches the planner. Today mobile is squeezed into a 1280×720 landscape box (letterboxed); the proposal uses a portrait box at the same pixel budget. Watch the <b>SPIN</b> glyph size.</p>
+          <div class="resgrid">
+            <figure class="bad"><canvas id="resBad" width="256" height="144"></canvas><figcaption>today · contain → 1280×720<br>content <span id="badContent">—</span> · SPIN ø <span class="glyphpx" id="badPx">—</span></figcaption></figure>
+            <figure class="good"><canvas id="resGood" width="144" height="256"></canvas><figcaption>proposed · 720×1280<br>content <span id="goodContent">—</span> · SPIN ø <span class="glyphpx" id="goodPx">—</span></figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var W=360,H=720;
+  // ---- ground truth: controls drawn as pixels, at known rects (360x720 space) ----
+  var CONTROLS=[
+    {id:"menu",       label:"MENU",    x:12,  y:14,  w:40, h:40, glyph:"hamburger", note:"app-shell menu (top-left)"},
+    {id:"deposit_plus",label:"+ (top)", x:308, y:14,  w:40, h:40, glyph:"plus",      note:"deposit + — look-alike of the bet + (L2 disambiguation)"},
+    {id:"book",       label:"BOOK",    x:150, y:296, w:60, h:80, glyph:"book",      note:"game-art icon; name ≠ look"},
+    {id:"lines",      label:"LINES",   x:14,  y:628, w:64, h:44, glyph:"text",      note:"paylines control"},
+    {id:"bet_minus",  label:"− (bet)", x:92,  y:626, w:48, h:48, glyph:"minus",     note:"decrease bet (bottom)"},
+    {id:"spin",       label:"SPIN",    x:150, y:610, w:72, h:72, glyph:"spin",      note:"circular arrows — the ‘refresh’=spin lexicon trap"},
+    {id:"bet_plus",   label:"+ (bet)", x:234, y:626, w:48, h:48, glyph:"plus",      note:"increase bet (bottom) — twin of the deposit + (L2)"},
+    {id:"info",       label:"i",       x:300, y:628, w:44, h:44, glyph:"info",      note:"info / paytable"}
+  ];
+  CONTROLS.forEach(function(c){ c.cx=c.x+c.w/2; c.cy=c.y+c.h/2; });
+  var byId={}; CONTROLS.forEach(function(c){byId[c.id]=c;});
+
+  var cv=document.getElementById("screen"), ctx=cv.getContext("2d");
+  var dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+  function sizeCanvas(){
+    cv.width=W*dpr; cv.height=H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  sizeCanvas();
+
+  var state={overlay:false, spins:0, taps:[], markers:[], free:{state:"idle",t:0,left:0}, pointer:null};
+  var hit=0, miss=0;
+
+  // ---------- glyph drawing ----------
+  function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+  function drawControl(c){
+    ctx.save();
+    // control chrome (subtle, still just pixels)
+    ctx.fillStyle="rgba(255,255,255,0.05)"; ctx.strokeStyle="rgba(255,255,255,0.14)"; ctx.lineWidth=1.2;
+    roundRect(c.x,c.y,c.w,c.h,10); ctx.fill(); ctx.stroke();
+    var g="rgba(233,241,242,0.92)"; ctx.strokeStyle=g; ctx.fillStyle=g; ctx.lineWidth=2.4;
+    ctx.lineCap="round"; ctx.lineJoin="round";
+    var cx=c.cx, cy=c.cy;
+    if(c.glyph==="plus"||c.glyph==="minus"){
+      var r=Math.min(c.w,c.h)*0.26;
+      ctx.beginPath();ctx.moveTo(cx-r,cy);ctx.lineTo(cx+r,cy);
+      if(c.glyph==="plus"){ctx.moveTo(cx,cy-r);ctx.lineTo(cx,cy+r);} ctx.stroke();
+    } else if(c.glyph==="hamburger"){
+      var w2=c.w*0.32;
+      for(var i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(cx-w2,cy+i*6);ctx.lineTo(cx+w2,cy+i*6);ctx.stroke();}
+    } else if(c.glyph==="info"){
+      ctx.lineWidth=2; ctx.beginPath();ctx.arc(cx,cy,c.w*0.30,0,Math.PI*2);ctx.stroke();
+      ctx.font="600 18px "+MONO; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("i",cx,cy+1);
+    } else if(c.glyph==="text"){
+      ctx.font="600 12px "+MONO; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(c.label,cx,cy);
+    } else if(c.glyph==="book"){
+      var bw=c.w*0.8,bh=c.h*0.78; ctx.lineWidth=2;
+      roundRect(cx-bw/2,cy-bh/2,bw,bh,4); ctx.stroke();
+      ctx.beginPath();ctx.moveTo(cx,cy-bh/2);ctx.lineTo(cx,cy+bh/2);ctx.stroke();
+      for(var k=-2;k<=2;k++){ctx.beginPath();ctx.moveTo(cx-bw/2+5,cy+k*7);ctx.lineTo(cx-5,cy+k*7);ctx.moveTo(cx+5,cy+k*7);ctx.lineTo(cx+bw/2-5,cy+k*7);ctx.stroke();}
+    } else if(c.glyph==="spin"){
+      var r2=c.w*0.30;
+      ctx.lineWidth=3;
+      // two circular arrows
+      for(var s=0;s<2;s++){
+        var a0=s*Math.PI, a1=a0+Math.PI*0.78;
+        ctx.beginPath();ctx.arc(cx,cy,r2,a0,a1);ctx.stroke();
+        var ex=cx+r2*Math.cos(a1),ey=cy+r2*Math.sin(a1);
+        var ta=a1+Math.PI*0.5;
+        ctx.beginPath();ctx.moveTo(ex,ey);
+        ctx.lineTo(ex+8*Math.cos(ta-0.5),ey+8*Math.sin(ta-0.5));
+        ctx.moveTo(ex,ey);ctx.lineTo(ex+8*Math.cos(ta+0.5),ey+8*Math.sin(ta+0.5));ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  var MONO='"IBM Plex Mono",monospace';
+
+  function drawScene(target){
+    var g=target||ctx;
+    // background
+    var grd=g.createLinearGradient(0,0,0,H);
+    grd.addColorStop(0,"#101d24"); grd.addColorStop(0.55,"#0a1417"); grd.addColorStop(1,"#0a0f12");
+    g.fillStyle=grd; g.fillRect(0,0,W,H);
+    // top bar
+    g.fillStyle="rgba(0,0,0,0.35)"; g.fillRect(0,0,W,66);
+    // HUD text (canvas-drawn — a read/OCR target, no DOM)
+    g.fillStyle="#e9f1f2"; g.textAlign="center"; g.textBaseline="alphabetic";
+    g.font="600 13px "+MONO; g.fillText("BALANCE  1,250.00 €",W/2,44);
+    g.font="500 11px "+MONO; g.fillStyle="#8fb0b4";
+    g.textAlign="left";  g.fillText("BET  2.50 €",16,712-8);
+    g.textAlign="right"; g.fillText("WIN  0.00 €",W-16,712-8);
+    g.textAlign="center";
+    // reels
+    var rx=24,ry=120,rw=W-48,rh=360;
+    g.fillStyle="rgba(255,255,255,0.03)"; g.strokeStyle="rgba(255,255,255,0.10)"; g.lineWidth=1;
+    for(var col=0;col<3;col++){ var cw=(rw-16)/3; var x=rx+col*(cw+8); g.fillRect(x,ry,cw,rh); g.strokeRect(x,ry,cw,rh);}
+  }
+
+  function drawBanner(){
+    if(state.free.state==="idle") return;
+    var b=state.free;
+    ctx.save();
+    var by=150, bh=140;
+    ctx.globalAlpha=0.96;
+    var pulse=(b.state==="changing")?(0.5+0.5*Math.sin(b.t/90)):1;
+    ctx.fillStyle="rgba(6,10,12,0.82)"; ctx.fillRect(20,by-20,W-40,bh+40);
+    ctx.strokeStyle="rgba(62,198,201,"+(0.5+0.5*pulse)+")"; ctx.lineWidth=2; ctx.strokeRect(20,by-20,W-40,bh+40);
+    ctx.textAlign="center"; ctx.fillStyle="#3ec6c9";
+    if(b.state==="changing"){
+      ctx.font="700 "+(20+6*pulse).toFixed(0)+"px "+SANS;
+      ctx.fillText("FREE GAMES",W/2,by+40);
+      ctx.font="500 12px "+MONO; ctx.fillStyle="#8fb0b4";
+      ctx.fillText("awarding…",W/2,by+70);
+    } else { // settled
+      ctx.font="700 22px "+SANS; ctx.fillStyle="#eaf6f6";
+      ctx.fillText("10 FREE GAMES",W/2,by+40);
+      ctx.font="600 14px "+MONO; ctx.fillStyle="#3ec6c9";
+      ctx.fillText("FREE SPINS LEFT  "+b.left,W/2,by+78);
+    }
+    ctx.restore();
+  }
+  var SANS='"IBM Plex Sans",system-ui,sans-serif';
+
+  function drawOverlay(){
+    if(!state.overlay) return;
+    ctx.save(); ctx.lineWidth=1;
+    CONTROLS.forEach(function(c){
+      ctx.strokeStyle="rgba(62,198,201,0.9)"; ctx.setLineDash([4,3]); ctx.strokeRect(c.x,c.y,c.w,c.h); ctx.setLineDash([]);
+      ctx.fillStyle="rgba(62,198,201,0.9)"; ctx.beginPath();ctx.arc(c.cx,c.cy,2.5,0,7);ctx.fill();
+      ctx.font="9px "+MONO; ctx.textAlign="left"; ctx.textBaseline="bottom";
+      ctx.fillStyle="#3ec6c9"; ctx.fillText(c.id+" "+Math.round(c.cx)+","+Math.round(c.cy), c.x, c.y-2);
+    });
+    ctx.restore();
+  }
+
+  function drawMarkers(now){
+    state.markers=state.markers.filter(function(m){return now-m.t<1300;});
+    state.markers.forEach(function(m){
+      var age=(now-m.t)/1300, a=1-age;
+      ctx.save(); ctx.globalAlpha=a;
+      ctx.strokeStyle=m.hit?"#5fd07a":"#f0685f"; ctx.lineWidth=2;
+      var r=6+age*10;
+      ctx.beginPath();ctx.arc(m.x,m.y,r,0,7);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(m.x-9,m.y);ctx.lineTo(m.x+9,m.y);ctx.moveTo(m.x,m.y-9);ctx.lineTo(m.x,m.y+9);ctx.stroke();
+      ctx.restore();
+    });
+  }
+  function drawPointer(){
+    if(!state.pointer) return;
+    ctx.save(); ctx.globalAlpha=0.5; ctx.strokeStyle="rgba(62,198,201,0.8)"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(0,state.pointer.y);ctx.lineTo(W,state.pointer.y);ctx.moveTo(state.pointer.x,0);ctx.lineTo(state.pointer.x,H);ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- resolution view (D3) ----------
+  var resBad=document.getElementById("resBad"),bctx=resBad.getContext("2d");
+  var resGood=document.getElementById("resGood"),gctx=resGood.getContext("2d");
+  var offscreen=document.createElement("canvas"); offscreen.width=W; offscreen.height=H; var octx=offscreen.getContext("2d");
+  function renderResViews(){
+    // draw current scene to offscreen 360x720
+    var save=ctx; ctx=octx; drawScene(); CONTROLS.forEach(drawControl); drawBanner(); ctx=save;
+    // BAD: contain into 1280x720 -> scale=min(1280/360,720/720)=1.0 -> 360x720 centred, letterboxed. shown in 256x144
+    bctx.fillStyle="#05090b"; bctx.fillRect(0,0,256,144);
+    var scaleBad=Math.min(1280/W,720/H); var cwB=W*scaleBad, chB=H*scaleBad; var kB=256/1280;
+    var dwB=cwB*kB, dhB=chB*kB;
+    bctx.drawImage(offscreen,(256-dwB)/2,(144-dhB)/2,dwB,dhB);
+    // GOOD: 720x1280 portrait box, scale=min(720/360,1280/720)=2.0 fits width -> 720x1440? clamp: content is 360x720 => *2 =720x1440 > 1280 => height-limited scale=1280/720=1.777 -> 640x1280. shown in 144x256
+    var scaleGood=Math.min(720/W,1280/H); var cwG=W*scaleGood, chG=H*scaleGood; var kG=256/1280;
+    gctx.fillStyle="#05090b"; gctx.fillRect(0,0,144,256);
+    var dwG=cwG*kG, dhG=chG*kG;
+    gctx.drawImage(offscreen,(144-dwG)/2,(256-dhG)/2,dwG,dhG);
+    // annotate SPIN glyph diameter in model px
+    var spin=byId.spin, spinDia=spin.w*0.6; // glyph ~0.6 of control
+    document.getElementById("badContent").textContent=Math.round(W*scaleBad)+"×"+Math.round(H*scaleBad)+" in 1280×720";
+    document.getElementById("goodContent").textContent=Math.round(W*scaleGood)+"×"+Math.round(H*scaleGood)+" in 720×1280";
+    document.getElementById("badPx").textContent="~"+Math.round(spinDia*scaleBad)+"px";
+    document.getElementById("goodPx").textContent="~"+Math.round(spinDia*scaleGood)+"px";
+  }
+
+  // ---------- main loop ----------
+  function frame(now){
+    ctx.clearRect(0,0,W,H);
+    drawScene();
+    CONTROLS.forEach(drawControl);
+    // free games timing: changing ~2.6s then settled
+    var f=state.free;
+    if(f.state==="changing"){ f.t+=16; if(f.t>2600){ f.state="settled"; log("SYS","free games settled → 10 spins", null); } }
+    drawBanner();
+    drawOverlay();
+    drawMarkers(now);
+    drawPointer();
+    renderResViews();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- interaction ----------
+  function toLogical(ev){
+    var r=cv.getBoundingClientRect();
+    var cxp=(ev.clientX-r.left)*(W/r.width);
+    var cyp=(ev.clientY-r.top)*(H/r.height);
+    return {x:Math.round(cxp),y:Math.round(cyp)};
+  }
+  function hitTest(x,y){
+    for(var i=0;i<CONTROLS.length;i++){var c=CONTROLS[i]; if(x>=c.x&&x<=c.x+c.w&&y>=c.y&&y<=c.y+c.h) return c;}
+    return null;
+  }
+  function nearest(x,y){
+    var best=null,bd=1e9;
+    CONTROLS.forEach(function(c){var d=Math.hypot(x-c.cx,y-c.cy); if(d<bd){bd=d;best=c;}});
+    return {c:best,d:Math.round(bd)};
+  }
+  function doTap(x,y){
+    var c=hitTest(x,y);
+    var rec={x:x,y:y,hit:!!c,target:c?c.id:null,ts:Date.now()};
+    if(c){ var dx=x-Math.round(c.cx), dy=y-Math.round(c.cy);
+      rec.dx=dx; rec.dy=dy; hit++;
+      console.log("[canvas-poc] TAP ("+x+","+y+") → HIT "+c.id+"  centreΔ=("+dx+","+dy+")  rect=["+c.x+","+c.y+","+c.w+","+c.h+"]");
+      if(c.id==="spin") spin();
+    } else { var nr=nearest(x,y); rec.near=nr.c.id; rec.dist=nr.d; miss++;
+      console.log("[canvas-poc] TAP ("+x+","+y+") → MISS  nearest="+nr.c.id+" dist="+nr.d+"px");
+    }
+    state.taps.push(rec); state.markers.push({x:x,y:y,hit:rec.hit,t:performance.now()});
+    document.getElementById("lastTap").textContent=x+","+y+(c?" ✓"+c.id:" ✕");
+    log(rec.hit?"HIT":"MISS", rec, c);
+    refreshStats();
+  }
+  function spin(){ state.spins++; document.getElementById("sSpins").textContent=state.spins;
+    if(state.spins%3===0 && state.free.state==="idle"){ triggerFree(); } }
+  function triggerFree(){ state.free={state:"changing",t:0,left:10}; console.log("[canvas-poc] free-games animation START (changing→settled)"); }
+
+  // ---------- console panel ----------
+  var logEl=document.getElementById("log");
+  function log(kind,rec,c){
+    if(logEl.querySelector(".empty")) logEl.innerHTML="";
+    var line=document.createElement("div"); line.className="line";
+    if(kind==="SYS"){ line.innerHTML='<span class="chip" style="background:transparent;color:var(--muted)">SYS</span><span class="coord">'+rec+'</span><span class="tgt"></span>'; }
+    else{
+      var chip='<span class="chip '+(rec.hit?"hit":"miss")+'">'+kind+'</span>';
+      var coord='<span class="coord">('+rec.x+","+rec.y+")</span>";
+      var tgt = rec.hit ? '<span class="tgt">'+rec.target+' Δ'+rec.dx+','+rec.dy+'</span>' : '<span class="tgt">~'+rec.near+' '+rec.dist+'px</span>';
+      line.innerHTML=chip+coord+tgt;
+    }
+    logEl.insertBefore(line,logEl.firstChild);
+  }
+  function refreshStats(){
+    var t=state.taps.length;
+    document.getElementById("sTotal").textContent=t;
+    document.getElementById("sHit").textContent=hit;
+    document.getElementById("sMiss").textContent=miss;
+    document.getElementById("hrPct").textContent = t? Math.round(hit/t*100)+"%":"—";
+  }
+
+  // ground-truth table
+  (function(){var tb=document.querySelector("#gt tbody");
+    CONTROLS.forEach(function(c){var tr=document.createElement("tr");
+      tr.innerHTML='<td class="gt-id">'+c.id+'</td><td>'+c.x+","+c.y+","+c.w+","+c.h+'</td><td>'+Math.round(c.cx)+","+Math.round(c.cy)+'</td><td class="note">'+c.note+'</td>';
+      tb.appendChild(tr);});
+  })();
+
+  // events
+  cv.addEventListener("click",function(e){var p=toLogical(e);doTap(p.x,p.y);});
+  cv.addEventListener("pointermove",function(e){var p=toLogical(e);state.pointer=p;document.getElementById("ptr").textContent=p.x+","+p.y;});
+  cv.addEventListener("pointerleave",function(){state.pointer=null;document.getElementById("ptr").textContent="—";});
+  var bo=document.getElementById("btnOverlay");
+  bo.addEventListener("click",function(){state.overlay=!state.overlay;bo.setAttribute("aria-pressed",state.overlay);});
+  document.getElementById("btnFree").addEventListener("click",triggerFree);
+  document.getElementById("btnReset").addEventListener("click",function(){
+    state.taps=[];state.markers=[];hit=0;miss=0;state.spins=0;state.free={state:"idle",t:0,left:0};
+    logEl.innerHTML='<div class="empty">Log cleared.</div>';document.getElementById("sSpins").textContent="0";
+    document.getElementById("lastTap").textContent="—";refreshStats();
+    console.log("[canvas-poc] reset");
+  });
+
+  // ---------- automation API ----------
+  window.canvasPoc={
+    controls:CONTROLS.map(function(c){return {id:c.id,label:c.label,rect:{x:c.x,y:c.y,w:c.w,h:c.h},center:{x:Math.round(c.cx),y:Math.round(c.cy)},note:c.note};}),
+    tapAt:function(x,y){doTap(Math.round(x),Math.round(y));return state.taps[state.taps.length-1];},
+    tap:function(id){var c=byId[id];if(!c){console.warn("[canvas-poc] no control "+id);return;}return this.tapAt(c.cx,c.cy);},
+    taps:function(){return state.taps.slice();},
+    hitRate:function(){var t=state.taps.length;return t?hit/t:null;},
+    triggerFreeGames:triggerFree,
+    freeGamesState:function(){return state.free.state;},
+    reset:function(){document.getElementById("btnReset").click();}
+  };
+  console.log("[canvas-poc] ready — "+CONTROLS.length+" controls. Try canvasPoc.tap('spin') or canvasPoc.controls");
+})();
+</script>
