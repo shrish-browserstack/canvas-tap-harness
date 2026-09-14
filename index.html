@@ -99,7 +99,7 @@
       </div>
       <div class="ctl-row">
         <button class="op" id="btnOverlay" aria-pressed="false">Ground-truth overlay</button>
-        <button class="op" id="btnFree">Trigger free games</button>
+        <button class="op" id="btnFree" hidden>Trigger free games</button>
         <button class="op" id="btnReset">Reset log</button>
       </div>
     </section>
@@ -409,6 +409,10 @@
   var bo=document.getElementById("btnOverlay");
   bo.addEventListener("click",function(){state.overlay=!state.overlay;bo.setAttribute("aria-pressed",state.overlay);});
   document.getElementById("btnFree").addEventListener("click",triggerFree);
+  // The trigger is an ORACLE control: during a negative "verify" case the agent must not be
+  // able to make the banner appear by pressing a page button. Humans get it back with ?oracle=1;
+  // the runner always has window.canvasPoc.triggerFreeGames().
+  if(new URLSearchParams(location.search).get("oracle")==="1"){document.getElementById("btnFree").hidden=false;}
   document.getElementById("btnReset").addEventListener("click",function(){
     state.taps=[];state.markers=[];hit=0;miss=0;state.spins=0;state.free={state:"idle",t:0,left:0};
     logEl.innerHTML='<div class="empty">Log cleared.</div>';document.getElementById("sSpins").textContent="0";
