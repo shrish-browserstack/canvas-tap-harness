@@ -22,6 +22,9 @@
   }
   *{box-sizing:border-box}
   body{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.5}
+  /* Author display rules (.console, .readout, .ctl-row) outrank the UA [hidden] rule; the
+     oracle gate relies on hidden meaning not rendered, so make it unconditional. */
+  [hidden]{display:none!important}
   .wrap{max-width:1180px;margin:0 auto;padding:20px 20px 48px}
   header.app{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:20px}
   header.app h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0}
@@ -86,26 +89,28 @@
   <header class="app">
     <h1>Canvas Tap Harness</h1>
     <span class="tag">canvas coordinate-click feasibility</span>
-    <p>A slot-style UI drawn entirely as <b>pixels on a <code>&lt;canvas&gt;</code></b> — no DOM, no accessibility tree, exactly what the App&nbsp;Automate planner perceives on a WebGL game. Tap a control; the console reads back <b>HIT/MISS against known geometry</b>. Drive it by hand, with browser automation (clicks log to console as <code>[canvas-poc]</code>), or via <code>window.canvasPoc</code>.</p>
+    <p id="blurb" hidden>A slot-style UI drawn entirely as <b>pixels on a <code>&lt;canvas&gt;</code></b> — no DOM, no accessibility tree, exactly what the App&nbsp;Automate planner perceives on a WebGL game. Tap a control; the console reads back <b>HIT/MISS against known geometry</b>. Drive it by hand, with browser automation (clicks log to console as <code>[canvas-poc]</code>), or via <code>window.canvasPoc</code>.</p>
   </header>
 
   <div class="grid">
     <!-- SYSTEM UNDER TEST -->
     <section class="stage" aria-label="Canvas under test">
       <div class="frame"><canvas id="screen" width="360" height="720"></canvas></div>
-      <div class="readout">
+      <div class="readout" id="readout" hidden>
         <span>pointer <b id="ptr">—</b></span>
         <span>last tap <b id="lastTap">—</b></span>
       </div>
-      <div class="ctl-row">
+      <div class="ctl-row" id="ctlRow" hidden>
         <button class="op" id="btnOverlay" aria-pressed="false">Ground-truth overlay</button>
         <button class="op" id="btnFree" hidden>Trigger free games</button>
         <button class="op" id="btnReset">Reset log</button>
       </div>
     </section>
 
-    <!-- OBSERVER / INSTRUMENT -->
-    <div class="console">
+    <!-- OBSERVER / INSTRUMENT — oracle channel only. Hidden unless ?oracle=1 so the
+         agent never sees control ids, rects, notes or its own HIT/MISS scoring in the DOM
+         or in screenshots. The runner keeps reading these nodes via JS textContent. -->
+    <div class="console" id="observer" hidden>
       <div class="card">
         <h2>Tap accuracy <span id="hrPct" style="font-family:var(--mono);color:var(--ink)">—</span></h2>
         <div class="body">
@@ -171,7 +176,7 @@
   }
   sizeCanvas();
 
-  var state={overlay:false, spins:0, taps:[], markers:[], free:{state:"idle",t:0,left:0}, pointer:null};
+  var state={overlay:false, spins:0, taps:[], markers:[], free:{state:"idle",t:0,left:0}, pointer:null, pt:{open:false,offset:0}};
   var hit=0, miss=0;
 
   // ---------- glyph drawing ----------
@@ -265,6 +270,53 @@
   }
   var SANS='"IBM Plex Sans",system-ui,sans-serif';
 
+  // ---------- paytable overlay: the SCROLL / SWIPE surface ----------
+  // A pixel-drawn list, 4 pages tall, over the reels. Moves on wheel or vertical
+  // drag. No DOM scroll offset exists — canvasPoc.paytable().offset is the only
+  // evidence a gesture landed. Opened by the oracle (never by a tap) so the
+  // scroll cases measure the gesture, not control discovery, and L0's tap
+  // ordering is untouched.
+  var PT={x:24,y:120,w:312,h:360,pages:4,rowH:30};
+  var PT_ROWS=(function(){
+    var syms=["BOOK","EXPLORER","PHARAOH","STATUE","SCARAB","ACE","KING","QUEEN","JACK","TEN"];
+    var heads=["PAYTABLE  ·  SYMBOLS","PAYTABLE  ·  LINES","PAYTABLE  ·  RULES","PAYTABLE  ·  FREE GAMES"];
+    var rows=[];
+    for(var p=0;p<PT.pages;p++){
+      rows.push({head:true,text:heads[p]});
+      for(var i=0;i<11;i++){
+        var s=syms[(i+p*3)%syms.length];
+        rows.push({text:s+"  x"+(3+(i%3)),val:String((10-i)*(p+1)*25)});
+      }
+    }
+    return rows; // 12 rows * 30px == one page per 360px
+  })();
+  function ptMaxOffset(){return (PT.pages-1)*PT.h;}
+  function ptPage(){return Math.min(PT.pages,Math.floor(state.pt.offset/PT.h)+1);}
+  function ptScroll(dy){state.pt.offset=Math.max(0,Math.min(ptMaxOffset(),state.pt.offset+dy));}
+  function inPaytable(x,y){return state.pt.open&&x>=PT.x&&x<=PT.x+PT.w&&y>=PT.y&&y<=PT.y+PT.h;}
+  function drawPaytable(){
+    if(!state.pt.open) return;
+    ctx.save();
+    ctx.fillStyle="rgba(6,10,12,0.94)"; ctx.fillRect(PT.x,PT.y,PT.w,PT.h);
+    ctx.strokeStyle="rgba(62,198,201,0.8)"; ctx.lineWidth=2; ctx.strokeRect(PT.x,PT.y,PT.w,PT.h);
+    ctx.beginPath(); ctx.rect(PT.x+1,PT.y+1,PT.w-2,PT.h-2); ctx.clip();
+    ctx.textBaseline="alphabetic";
+    PT_ROWS.forEach(function(r,i){
+      var y=PT.y+i*PT.rowH-state.pt.offset+PT.rowH*0.7;
+      if(y<PT.y-PT.rowH||y>PT.y+PT.h+PT.rowH) return;
+      if(r.head){ctx.fillStyle="#3ec6c9";ctx.font="700 14px "+SANS;ctx.textAlign="left";ctx.fillText(r.text,PT.x+14,y);}
+      else{ctx.fillStyle="#e9f1f2";ctx.font="500 12px "+MONO;ctx.textAlign="left";ctx.fillText(r.text,PT.x+14,y);
+           ctx.textAlign="right";ctx.fillText(r.val,PT.x+PT.w-22,y);}
+    });
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle="#8fb0b4"; ctx.font="600 11px "+MONO; ctx.textAlign="right"; ctx.textBaseline="alphabetic";
+    ctx.fillText("PAGE "+ptPage()+"/"+PT.pages,PT.x+PT.w-12,PT.y+PT.h-8);
+    var trackH=PT.h-20, thumbH=trackH/PT.pages, ty=PT.y+10+(state.pt.offset/ptMaxOffset())*(trackH-thumbH);
+    ctx.fillStyle="rgba(62,198,201,0.7)"; ctx.fillRect(PT.x+PT.w-6,ty,3,thumbH);
+    ctx.restore();
+  }
+
   function drawOverlay(){
     if(!state.overlay) return;
     ctx.save(); ctx.lineWidth=1;
@@ -330,6 +382,7 @@
     var f=state.free;
     if(f.state==="changing"){ f.t+=16; if(f.t>2600){ f.state="settled"; log("SYS","free games settled → 10 spins", null); } }
     drawBanner();
+    drawPaytable();
     drawOverlay();
     drawMarkers(now);
     drawPointer();
@@ -355,7 +408,10 @@
     return {c:best,d:Math.round(bd)};
   }
   function doTap(x,y){
-    var c=hitTest(x,y);
+    // While the paytable is open it occludes the reels: a tap inside it is a tap on
+    // the panel, never on the control drawn beneath (book). Still logged as a tap —
+    // the scroll cases treat any tap as the wrong actuation.
+    var c=inPaytable(x,y)?null:hitTest(x,y);
     var rec={x:x,y:y,hit:!!c,target:c?c.id:null,ts:Date.now()};
     if(c){ var dx=x-Math.round(c.cx), dy=y-Math.round(c.cy);
       rec.dx=dx; rec.dy=dy; hit++;
@@ -403,8 +459,19 @@
   })();
 
   // events
-  cv.addEventListener("click",function(e){var p=toLogical(e);doTap(p.x,p.y);});
-  cv.addEventListener("pointermove",function(e){var p=toLogical(e);state.pointer=p;document.getElementById("ptr").textContent=p.x+","+p.y;});
+  // A drag ends with a synthetic click on the same element; swallow that one so a
+  // swipe is scored as a gesture, not as a tap on whatever sat under the pointer.
+  var suppressClick=false, drag=null;
+  cv.addEventListener("click",function(e){ if(suppressClick){suppressClick=false;return;} var p=toLogical(e);doTap(p.x,p.y);});
+  cv.addEventListener("pointermove",function(e){var p=toLogical(e);state.pointer=p;document.getElementById("ptr").textContent=p.x+","+p.y;
+    if(drag){var dy=p.y-drag.y;drag.y=p.y;drag.moved+=Math.abs(dy);ptScroll(-dy);}});
+  cv.addEventListener("wheel",function(e){ if(!state.pt.open) return; e.preventDefault();
+    var k=H/cv.getBoundingClientRect().height; ptScroll(e.deltaY*k);
+    console.log("[canvas-poc] PAYTABLE wheel Δ"+Math.round(e.deltaY)+" → offset="+Math.round(state.pt.offset)+" page="+ptPage());},{passive:false});
+  cv.addEventListener("pointerdown",function(e){var p=toLogical(e); if(inPaytable(p.x,p.y)) drag={y:p.y,moved:0};});
+  cv.addEventListener("pointerup",function(){ if(drag&&drag.moved>6){suppressClick=true;
+    console.log("[canvas-poc] PAYTABLE drag → offset="+Math.round(state.pt.offset)+" page="+ptPage());} drag=null;});
+  cv.addEventListener("pointercancel",function(){drag=null;});
   cv.addEventListener("pointerleave",function(){state.pointer=null;document.getElementById("ptr").textContent="—";});
   var bo=document.getElementById("btnOverlay");
   bo.addEventListener("click",function(){state.overlay=!state.overlay;bo.setAttribute("aria-pressed",state.overlay);});
@@ -412,9 +479,14 @@
   // The trigger is an ORACLE control: during a negative "verify" case the agent must not be
   // able to make the banner appear by pressing a page button. Humans get it back with ?oracle=1;
   // the runner always has window.canvasPoc.triggerFreeGames().
-  if(new URLSearchParams(location.search).get("oracle")==="1"){document.getElementById("btnFree").hidden=false;}
+  // Same gate for every observer surface: the ground-truth table, tap log, accuracy stats,
+  // D3 panel, pointer readout, overlay/reset buttons and the header blurb all name controls
+  // or expose scoring, so the agent must never see them (DOM tree or screenshot).
+  if(new URLSearchParams(location.search).get("oracle")==="1"){
+    ["btnFree","blurb","readout","ctlRow","observer"].forEach(function(id){var e=document.getElementById(id);if(e)e.hidden=false;});
+  }
   document.getElementById("btnReset").addEventListener("click",function(){
-    state.taps=[];state.markers=[];hit=0;miss=0;state.spins=0;state.free={state:"idle",t:0,left:0};
+    state.taps=[];state.markers=[];hit=0;miss=0;state.spins=0;state.free={state:"idle",t:0,left:0};state.pt={open:false,offset:0};
     logEl.innerHTML='<div class="empty">Log cleared.</div>';document.getElementById("sSpins").textContent="0";
     document.getElementById("lastTap").textContent="—";refreshStats();
     console.log("[canvas-poc] reset");
@@ -429,6 +501,11 @@
     hitRate:function(){var t=state.taps.length;return t?hit/t:null;},
     triggerFreeGames:triggerFree,
     freeGamesState:function(){return state.free.state;},
+    // paytable (scroll surface) — oracle only
+    paytable:function(){return {open:state.pt.open,offset:Math.round(state.pt.offset),page:ptPage(),pages:PT.pages,maxOffset:ptMaxOffset()};},
+    openPaytable:function(){state.pt.open=true;state.pt.offset=0;console.log("[canvas-poc] paytable OPEN (4 pages, wheel or drag to scroll)");},
+    closePaytable:function(){state.pt.open=false;},
+    scrollPaytable:function(px){ptScroll(px);return Math.round(state.pt.offset);},
     reset:function(){document.getElementById("btnReset").click();}
   };
   console.log("[canvas-poc] ready — "+CONTROLS.length+" controls. Try canvasPoc.tap('spin') or canvasPoc.controls");
